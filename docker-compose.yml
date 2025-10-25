@@ -1,0 +1,51 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  dds:
+    image: ros:humble-perception
+    network_mode: host
+    restart: always
+    command: fastdds discovery --server-id 0 -t 0.0.0.0
+    # слушает на порту 11811 (по умолчанию)
+
+  lidar:
+    build:
+      context: ./lidar
+    privileged: true
+    network_mode: host
+    volumes:
+      - /dev/bus/usb:/dev/bus/usb
+    environment:
+      - ROS_DISCOVERY_SERVER=TCPv4:[127.0.0.1]:11811
+      - ROS_SUPER_CLIENT=TRUE
+    restart: always
+
+  camera:
+    build:
+      context: ./camera
+    privileged: true
+    network_mode: host
+    volumes:
+      - /dev/bus/usb:/dev/bus/usb
+    environment:
+      - ROS_DISCOVERY_SERVER=TCPv4:[127.0.0.1]:11811
+      - ROS_SUPER_CLIENT=TRUE
+    restart: always
+
+  client:
+    build:
+      context: ./client
+    network_mode: host
+    volumes:
+      - ./client/client.py:/root/client.py
+    environment:
+      - ROS_DISCOVERY_SERVER=TCPv4:[127.0.0.1]:11811
+      - ROS_SUPER_CLIENT=TRUE
+    command: >
+      bash -c "
+        source /opt/ros/humble/setup.bash &&
+        source /root/colcon_ws/install/setup.bash &&
+        python3 /root/client.py
+      "
+    restart: on-failure
