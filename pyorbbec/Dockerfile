@@ -17,6 +17,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /root
 RUN git clone https://github.com/orbbec/pyorbbecsdk.git
 WORKDIR /root/pyorbbecsdk
+RUN git checkout main   
 
 # Устанавливаем Python-зависимости
 RUN pip install --no-cache-dir -r requirements.txt
