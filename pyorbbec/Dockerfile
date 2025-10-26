@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     libudev-dev \
     libusb-1.0-0-dev \
+    libusb-1.0-0 \  
     libopenni2-dev \
     python3-opencv \
     && rm -rf /var/lib/apt/lists/*
