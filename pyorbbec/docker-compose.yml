@@ -1,0 +1,13 @@
+services:
+  pyorbbec:
+    build: .  
+    image: pyorbbec
+    privileged: true
+    # devices:
+    #   - "/dev/bus/usb:/dev/bus/usb"
+    network_mode: host
+    volumes:
+      # - "/dev/bus/usb:/dev/bus/usb"    
+      - ./scripts:/root/scripts
+    command: python3 /root/scripts/depth_viewer.py
+    # command: tail -f /dev/null          # ← "заглушка", чтобы контейнер не завершался

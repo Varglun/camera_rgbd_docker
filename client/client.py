@@ -12,8 +12,8 @@ class SensorFusionNode(Node):
         self.bridge = CvBridge()
 
         # Подписка на лидар
-        self.lidar_sub = self.create_subscription(
-            LaserScan, '/scan', self.lidar_callback, 10)
+        # self.lidar_sub = self.create_subscription(
+        #     LaserScan, '/scan', self.lidar_callback, 10)
 
         # Подписка на RGB
         self.rgb_sub = self.create_subscription(
@@ -23,9 +23,9 @@ class SensorFusionNode(Node):
         self.depth_sub = self.create_subscription(
             Image, '/camera/depth/image_raw', self.depth_callback, 10)
 
-        # Подписка на облако точек (опционально)
-        self.points_sub = self.create_subscription(
-            PointCloud2, '/camera/points', self.points_callback, 10)
+        # # Подписка на облако точек (опционально)
+        # self.points_sub = self.create_subscription(
+        #     PointCloud2, '/camera/points', self.points_callback, 10)
 
         self.get_logger().info("Жду данные от лидара и камеры...")
 

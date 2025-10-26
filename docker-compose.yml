@@ -1,6 +1,4 @@
 # docker-compose.yml
-version: '3.8'
-
 services:
   dds:
     image: ros:humble-perception
@@ -9,17 +7,17 @@ services:
     command: fastdds discovery --server-id 0 -t 0.0.0.0
     # слушает на порту 11811 (по умолчанию)
 
-  lidar:
-    build:
-      context: ./lidar
-    privileged: true
-    network_mode: host
-    volumes:
-      - /dev/bus/usb:/dev/bus/usb
-    environment:
-      - ROS_DISCOVERY_SERVER=TCPv4:[127.0.0.1]:11811
-      - ROS_SUPER_CLIENT=TRUE
-    restart: always
+  # lidar:
+  #   build:
+  #     context: ./lidar
+  #   privileged: true
+  #   network_mode: host
+  #   volumes:
+  #     - /dev/bus/usb:/dev/bus/usb
+  #   environment:
+  #     - ROS_DISCOVERY_SERVER=TCPv4:[127.0.0.1]:11811
+  #     - ROS_SUPER_CLIENT=TRUE
+  #   restart: always
 
   camera:
     build:
