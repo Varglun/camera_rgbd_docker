@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  mjpeg-server:
+    build: .
+    container_name: mjpeg-server
+    ports:
+      - "5000:5000"
+    devices:
+      - "/dev/video0:/dev/video0"
+    # Дополнительно: если у твоей камеры другое имя (например, /dev/video1), измени выше
+    restart: unless-stopped
+    # Опционально: если нужен доступ к группе video (часто требуется)
+    group_add:
+      - 44  # ID группы 'video' в Ubuntu/Debian (проверь через: getent group video)
