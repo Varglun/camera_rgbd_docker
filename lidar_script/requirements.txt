@@ -1,3 +1,4 @@
 pyserial
-laspy
+flask
+opencv-python
 numpy
