@@ -26,7 +26,10 @@ def main():
 
     try:
         while True:
-            frames = pipeline.wait_for_frames(100)
+            frames = pipeline.wait_for_frames(5000)
+            if frames is None:
+                print("Ошибка: не удалось получить кадры (таймаут)")
+                return
             depth_frame = frames.get_depth_frame()
             color_frame = frames.get_color_frame()
 
