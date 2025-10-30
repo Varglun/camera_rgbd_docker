@@ -2,10 +2,11 @@ import cv2 as cv
 import os
 import numpy as np
 import json
+from tqdm import tqdm
 
 
 class LidarToVideo:
-    def __init__(self, out_folder: str = "", max_distance: int = 12, resolution: int = 2400):
+    def __init__(self, out_folder: str = "", max_distance: int = 12, resolution: int = 2400, suffix=""):
         """
         Инициализация объекта для записи данных лидара в видео.
         
@@ -21,18 +22,19 @@ class LidarToVideo:
         self.out = None
         self.center = resolution // 2  # Центр изображения
         self.scale = resolution / (2 * max_distance)  # Масштаб для перевода мм в пиксели
+        self.suffix = suffix
 
     def new_video(self):
         """
         Создает новый файл для записи видео.
         """
         self.name_id += 1
-        name = f"lidar_video_{self.name_id}.avi"
+        name = f"lidar_video_{self.name_id}_{self.suffix}.avi"
         full_path = os.path.join(self.out_folder, name)
         self.out = cv.VideoWriter(
             full_path,
             cv.VideoWriter_fourcc(*"FFV1"),  # Кодек без потерь
-            30,  # Частота кадров
+            10,  # Частота кадров
             (self.resolution, self.resolution)
         )
 
@@ -97,22 +99,21 @@ class LidarToVideo:
 # Пример использования
 if __name__ == "__main__":
     # Создаем объект для записи видео
-    lidar_to_video = LidarToVideo(out_folder="output_videos", max_distance=2, resolution=400)
+    lidar_to_video = LidarToVideo(out_folder="output_videos", max_distance=3, resolution=800, suffix="new_1")
     
     # Создаем новый видеофайл
     lidar_to_video.new_video()
     data = []
 
-    with open("lidar_main_work/scan_output.txt") as data_file:
+    with open("lidar_main_work/scan_output_1761760087.txt") as data_file:
         for line in data_file:
             if line[0] == "{":
                 data.append(json.loads(line))
     
     
     # Записываем данные в видео
-    for point in data:  # 100 кадров
-        print(len(point['points']))
-        points = point['points']
+    for point in tqdm(data):  # 100 кадров
+        points = point['p']
         lidar_to_video.write(points)
     
     # Останавливаем запись
