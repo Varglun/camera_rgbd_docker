@@ -45,7 +45,31 @@ def scan_to_pcd(pts2d):
     return pcd
 
 
-def icp_2d(scan_prev, scan_curr, max_corr_dist=0.5):
+def farthest_point_sampling(pcd, npoints):
+    points = np.asarray(pcd.points)
+    N = points.shape[0]
+    if npoints >= N:
+        return pcd
+
+    sampled_indices = np.zeros(npoints, dtype=int)
+    distances = np.full(N, np.inf)  # расстояния до ближайшей выбранной точки
+
+    # Выбираем первую точку случайно (или можно взять первую)
+    sampled_indices[0] = 0
+    distances = np.linalg.norm(points - points[0], axis=1)
+
+    for i in range(1, npoints):
+        # Выбираем точку с максимальным расстоянием до уже выбранных
+        farthest_idx = np.argmax(distances)
+        sampled_indices[i] = farthest_idx
+        # Обновляем расстояния
+        new_distances = np.linalg.norm(points - points[farthest_idx], axis=1)
+        distances = np.minimum(distances, new_distances)
+
+    pcd_fps = pcd.select_by_index(sampled_indices.tolist())
+    return pcd_fps
+
+def icp_2d(scan_prev, scan_curr, max_corr_dist=0.5, voxel_down_sample=0.1, remove_points_prev=None):
     """
     scan_prev, scan_curr: np.array of shape (N, 2) — [[angle, dist], ...]
     returns: (theta, tx, ty)
@@ -54,11 +78,13 @@ def icp_2d(scan_prev, scan_curr, max_corr_dist=0.5):
     target = scan_to_pcd(scan_prev)
     source = scan_to_pcd(scan_curr)
 
-    # (Опционально) прореживаем
-    voxel_size = 0.05  # метров
-    target = target.voxel_down_sample(voxel_size)
-    source = source.voxel_down_sample(voxel_size)
-
+    if voxel_down_sample is not None:
+        # (Опционально) прореживаем
+        target = target.voxel_down_sample(voxel_down_sample)
+        source = source.voxel_down_sample(voxel_down_sample)
+    
+    if remove_points_prev is not None:
+        target = farthest_point_sampling(target, remove_points_prev)
     # Запускаем ICP
     result = o3d.pipelines.registration.registration_icp(
         source, target,
@@ -169,6 +195,11 @@ def transform_point_cloud(points, angle, translation):
         transformed_points.append(transformed_point)
 
     return np.array(transformed_points)
+
+def draw_rect_at_center(cx, cy, img, square_size):
+    top_left = (cx - square_size // 2, cy - square_size // 2)
+    bottom_right = (cx + square_size // 2, cy + square_size // 2)
+    cv2.rectangle(img, top_left, bottom_right, (255, 255, 255), -1)    
 
 def get_affine_matrix(theta, tx, ty):
     cos_t = np.cos(theta)
@@ -294,7 +325,7 @@ def combine_videos_side_by_side(video1_path, video2_path, output_path):
 
 
 
-def filter_points_by_radius(points, center=(0, 0), radius=0.2):
+def filter_points_by_radius(points, center=(0, 0), radius=0.2, inside=False):
     """
     Удаляет точки, находящиеся в пределах заданного радиуса от центра.
 
@@ -307,7 +338,10 @@ def filter_points_by_radius(points, center=(0, 0), radius=0.2):
     distances = np.linalg.norm(points - np.array(center), axis=1)
     
     # Фильтруем точки, оставляя только те, которые находятся за пределами радиуса
-    filtered_points = points[distances >= radius]
+    if inside:
+        filtered_points = points[distances < radius]
+    else:
+        filtered_points = points[distances >= radius]
     
     return filtered_points
 
