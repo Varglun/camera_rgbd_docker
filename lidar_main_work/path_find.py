@@ -56,7 +56,7 @@ def is_line_clear(im, start, end):
 
     while True:
         # Если текущая точка находится на препятствии, возвращаем False
-        if im[y0, x0] != 0:
+        if im[y0, x0] == 0:
             return False
         if x0 == x1 and y0 == y1:
             break
@@ -75,7 +75,7 @@ def find_farthest_point_on_path(im, path, start):
     """
     farthest_point = None
     for point in path:
-        if is_line_clear(im, start, point):
+        if is_line_clear(im[:, :, 0], start, point):
             farthest_point = point
         else:
             break  # Прекращаем проверку, если встретили препятствие

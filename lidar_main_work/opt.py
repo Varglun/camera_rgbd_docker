@@ -134,6 +134,15 @@ def scan_to_pcd(pts2d):
     pcd.points = o3d.utility.Vector3dVector(pts3d)
     return pcd
 
+def pcd_to_scan(pcd):
+    pts3d = np.asarray(pcd.points)
+    return pts3d[:, :2]  # (N, 2)
+
+def down_sample_point_cloud(points, voxel_down_sample):
+    pcd = scan_to_pcd(points)
+    target = pcd.voxel_down_sample(voxel_down_sample)
+    points_down = pcd_to_scan(target)
+    return points_down
 
 def farthest_point_sampling(pcd, npoints):
     points = np.asarray(pcd.points)
