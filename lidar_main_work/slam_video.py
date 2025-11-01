@@ -34,7 +34,7 @@ class LidarToVideoSLAM:
         self.frame = None
         self.video_suff = video_suff
         self.transform = get_affine_matrix(0, 0, 0)
-        self.lidar_shear = np.array([[0.066], [-0.03]]) # 0.064
+        self.lidar_shear = np.array([[0], [0]]) # 0.064 [[0.066], [-0.03]]
         self.action = "stay"
         self.change = 0
         self.points_data = []
@@ -164,7 +164,7 @@ class LidarToVideoSLAM:
             theta, tx, ty = icp_2d(main_point_cloud.T  + self.lidar_shear, cart_points_trans.T  + self.lidar_shear, max_corr_dist=0.2,
                                    voxel_down_sample=0.1,
                                    remove_points_prev=None)
-            if theta * 180 / np.pi > 10:
+            if abs(theta * 180 / np.pi) > 15:
                 return
 
             # if command in ['a', 'd']:
@@ -246,7 +246,7 @@ class LidarToVideoSLAM:
 # Пример использования
 if __name__ == "__main__":
     # Создаем объект для записи видео
-    lidar_to_video = LidarToVideoSLAM(out_folder="output_videos", max_distance=3, resolution=50, video_suff="scan_o3d2_test")
+    lidar_to_video = LidarToVideoSLAM(out_folder="output_videos", max_distance=3, resolution=300, video_suff="scan_o3d2_test")
     
     # Создаем новый видеофайл
     lidar_to_video.new_video()

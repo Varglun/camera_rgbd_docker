@@ -12,9 +12,75 @@ def read_txt(file):
                 data.append(json.loads(line))
     return data
 
+def angle_from_xy1_point_to_xy0_direction(A, point_xy1):
+    """
+    Находит угол (в радианах) от оси X0 до направления на точку,
+    заданную в системе XY1, при наблюдении из начала системы XY0.
+
+    Параметры:
+        A : ndarray, shape (3, 3)
+            Аффинная матрица, переводящая из XY0 в XY1.
+        point_xy1 : array-like, shape (2,)
+            Координаты точки в системе XY1.
+
+    Возвращает:
+        angle : float
+            Угол в радианах в диапазоне (-pi, pi].
+    """
+    # Преобразуем точку в однородные координаты
+    p1_hom = np.array([point_xy1[0], point_xy1[1], 1.0])
+
+    # Обратная аффинная матрица: из XY1 -> XY0
+    A_inv = np.linalg.inv(A)
+
+    # Переводим точку в систему XY0
+    p0_hom = A_inv @ p1_hom
+    p0 = p0_hom[:2]  # Декартовы координаты в XY0
+
+    # Угол от оси X0 до вектора p0
+    angle = np.arctan2(p0[1], p0[0])  # уже в (-pi, pi]
+
+    return angle
+
+
+def affine_matrix_from_axes_and_offset(x0_axis, y0_axis, origin_offset, normalize=True):
+    """
+    Строит аффинную матрицу 3x3, переводящую координаты из системы XY0 в XY1.
+
+    Параметры:
+        x0_axis : array-like, shape (2,)
+            Направление оси X системы XY0, выраженное в координатах XY1.
+        y0_axis : array-like, shape (2,)
+            Направление оси Y системы XY0, выраженное в координатах XY1.
+        origin_offset : array-like, shape (2,)
+            Координаты начала системы XY0 в системе XY1.
+        normalize : bool, optional (default=True)
+            Если True — нормализует базисные векторы (удаляет масштаб).
+            Если False — сохраняет длину векторов как масштаб по осям.
+
+    Возвращает:
+        A : ndarray, shape (3, 3)
+            Аффинная матрица в однородных координатах.
+    """
+    x0 = np.array(x0_axis, dtype=float)
+    y0 = np.array(y0_axis, dtype=float)
+    t  = np.array(origin_offset, dtype=float)
+
+    if normalize:
+        x0 = x0 / np.linalg.norm(x0)
+        y0 = y0 / np.linalg.norm(y0)
+
+    R = np.column_stack((x0, y0))  # Матрица 2x2: [x0 | y0]
+
+    A = np.eye(3)
+    A[:2, :2] = R
+    A[:2, 2] = t
+
+    return A
+
         
 
-def polar_to_cartesian(scan, min_dist=0, max_dist=12):
+def polar_to_cartesian_from_x(scan, min_dist=0, max_dist=12):
     """
     scan: np.array of shape (N, 2) — [[angle, distance], ...]
     returns: np.array of shape (2, N) — [[x1, x2, ...], [y1, y2, ...]]
@@ -26,6 +92,30 @@ def polar_to_cartesian(scan, min_dist=0, max_dist=12):
     distances = distances[valid]    
     x = distances * np.cos(angles)
     y = distances * np.sin(angles)
+    return np.vstack([x, y]).T
+
+def polar_to_cartesian_from_y(scan, min_dist=0, max_dist=12):
+    """
+    scan: np.array of shape (N, 2) — [[angle, distance], ...]
+    returns: np.array of shape (2, N) — [[x1, x2, ...], [y1, y2, ...]]
+    
+    Угол отсчитывается от оси Y по часовой стрелке.
+    """
+    # Преобразуем углы из градусов в радианы и меняем их знак для корректного направления
+    angles = np.radians(scan[:, 0]) * -1
+    
+    # Расстояния
+    distances = scan[:, 1]
+    
+    # Фильтруем точки по минимальному и максимальному расстоянию
+    valid = (distances > min_dist) & (distances < max_dist)
+    angles = angles[valid]
+    distances = distances[valid]
+    
+    # Преобразование с учетом того, что угол отсчитывается от оси Y
+    x = distances * np.sin(angles)  # sin для x, так как угол от оси Y
+    y = distances * np.cos(angles)  # cos для y, так как угол от оси Y
+    
     return np.vstack([x, y]).T
 
 
