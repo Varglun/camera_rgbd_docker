@@ -12,6 +12,36 @@ def read_txt(file):
                 data.append(json.loads(line))
     return data
 
+def angle_between_2d(v1, v2, deg=True):
+    """
+    Возвращает ориентированный угол от v1 к v2 в диапазоне [-pi, pi] (или [-180, 180] градусов).
+    
+    Параметры:
+        v1, v2 : array-like, shape (2,)
+            Двумерные векторы.
+        deg : bool, optional
+            Если True — возвращает угол в градусах, иначе — в радианах.
+    
+    Возвращает:
+        angle : float
+            Угол между векторами.
+    """
+    v1 = np.asarray(v1)
+    v2 = np.asarray(v2)
+    
+    # Углы каждого вектора относительно оси X
+    ang1 = np.arctan2(v1[1], v1[0])
+    ang2 = np.arctan2(v2[1], v2[0])
+    
+    # Разность углов с корректной обработкой ветвления (wrapping)
+    angle = ang2 - ang1
+    angle = (angle + np.pi) % (2 * np.pi) - np.pi  # приведение к [-pi, pi]
+    
+    if deg:
+        angle = np.degrees(angle)
+    
+    return angle
+
 def angle_from_xy1_point_to_xy0_direction(A, point_xy1):
     """
     Находит угол (в радианах) от оси X0 до направления на точку,

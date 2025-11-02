@@ -8,11 +8,12 @@ import math
 from opt import (read_txt, icp_2d, polar_to_cartesian_from_x,
                   filter_points_by_radius, get_affine_matrix, 
                  apply_transform, draw_points, affine_matrix_from_axes_and_offset,
-                   angle_from_xy1_point_to_xy0_direction, down_sample_point_cloud)
+                   angle_from_xy1_point_to_xy0_direction, down_sample_point_cloud, angle_between_2d)
 from path_find import find_path_to_nearest, find_farthest_point_on_path
 
 
 MIN_LIDAR_POINTS_FOR_INIT = 400
+MIN_LIDAR_POINTS_FOR_DETECT = 100
 
 class LidarToVideoSLAM:
     def __init__(self, out_folder: str = "", 
@@ -70,27 +71,47 @@ class LidarToVideoSLAM:
     
     def get_point_coord_on_map(self, point):
         return np.floor(point * self.scale).astype(np.int32)
+    
+    def get_object_orientation_vector_in_map_coords(self):
+        obj_cent = self.get_point_coord_on_map(self.object_center)
+        obj_orient = self.get_point_coord_on_map(self.object_orient)
+        vector_orientation = obj_orient - obj_cent
+        return vector_orientation
+    
+    def get_local_goal_orientation_vector_in_map_coords(self):
+        obj_cent = self.get_point_coord_on_map(self.object_center)
+        vector_orientation = self.local_goal - obj_cent
+        return vector_orientation    
 
     def move_point_cloud_from_lidar_to_robot_center(self, point_cloud):
         return point_cloud + self.lidar_shear.T
 
-    def write(self, data: list):
+    def write_data(self, data: list):
         """
         Записывает данные лидара в текущий видеофайл.
         
         :param data: Список точек в формате [(angle, distance, intensity), ...].
                      Угол задан в градусах, расстояние в мм, интенсивность в диапазоне [0, 255].
         """
+        if (data is None) or len(data) < MIN_LIDAR_POINTS_FOR_DETECT:
+            print("Not enough lidar points for detect. Waiting...")
+            return
         if self.start and len(data) < MIN_LIDAR_POINTS_FOR_INIT:
             print("Not enough lidar points for initiate. Waiting...")
             return
         self.start = False
         self._points_data_to_frame(data)
+
+    def write_video_frame(self):
         if self.save_to_video:
             im = self.map.copy()
+            cv.imwrite("hello.png", im)
             im = self.draw_object_and_orient(im)
+            cv.imwrite("hello.png", im)
             im = self.draw_path(im)
+            cv.imwrite("hello.png", im)
             im = self.draw_local_goal(im)
+            cv.imwrite("hello.png", im)
             self.out.write(im)
             
             
@@ -117,14 +138,23 @@ class LidarToVideoSLAM:
     def find_next_local_goal(self):
         path = find_path_to_nearest(self.map, 
                                     self.get_point_coord_on_map(self.object_center), self.goal)
+        if path is None or len(path) == 0:
+            print('No path can be found')
         self.path = path
-        self.local_goal = find_farthest_point_on_path(self.map, path, 
+        local_goal = find_farthest_point_on_path(self.map, path, 
                                                       self.get_point_coord_on_map(self.object_center))
+        if local_goal is not None:
+            self.local_goal = local_goal
     
     def get_local_goal(self):
-        local_goal_theta = angle_from_xy1_point_to_xy0_direction(self.transform, self.local_goal)
-        local_goal_distance = np.linalg.norm(np.array(self.local_goal) - self.get_point_coord_on_map(self.object_center))
-        return local_goal_theta, local_goal_distance
+        if self.local_goal is not None:
+            obj_orient = self.get_object_orientation_vector_in_map_coords()
+            goal_orient = self.get_local_goal_orientation_vector_in_map_coords()
+            local_goal_theta = angle_between_2d(obj_orient, goal_orient, deg=True)
+            local_goal_distance = (np.linalg.norm(self.local_goal - self.get_point_coord_on_map(self.object_center)))
+            return local_goal_theta, local_goal_distance / self.scale
+        else:
+            return None, None
     
     def draw_path(self, im):
         for p in self.path[1:-1]:
@@ -133,8 +163,12 @@ class LidarToVideoSLAM:
         return im
     
     def draw_local_goal(self, im):
-        cv.line(im, self.get_point_coord_on_map(self.object_center), 
-                self.local_goal, (255, 255, 0), math.ceil(self.orient_line_width_for_draing * self.scale))
+        if self.local_goal is not None:
+            cv.line(im, self.get_point_coord_on_map(self.object_center), 
+                    self.local_goal, (255, 255, 0), math.ceil(self.orient_line_width_for_draing * self.scale))
+            cv.imwrite("hello.png", im)
+            theta, distance = self.get_local_goal()
+            cv.putText(im, f"Theta: {int(theta)}. Distance: {distance:.2f}", (0, self.resolution), 1, 1.5, (255, 255, 0), 2)
         return im
         
         
@@ -190,8 +224,8 @@ if __name__ == "__main__":
     # Создаем объект для записи видео
     lidar_to_video = LidarToVideoSLAM(out_folder="output_videos",
                                       scale=100,
-                                      map_size_meters=4,
-                                      video_name="go_test_path",
+                                      map_size_meters=8,
+                                      video_name="go_test_path3",
                                       wall_radius=0.1,
                                       goal=[3.5, 3.5],
                                       start_position=[2, 2],
@@ -205,10 +239,14 @@ if __name__ == "__main__":
     for i, point_cloud in tqdm(enumerate(data), total=len(data)):  # 100 кадров
         # if i < 1:
             # continue
-        lidar_to_video.write(np.array(point_cloud['p']))
+        # if i % 50 == 0:
+                 
+        lidar_to_video.write_data(np.array(point_cloud['p']))
         lidar_to_video.find_next_local_goal()
-        if i > 5*10:
-            break
+        lidar_to_video.write_video_frame()
+
+        # if i >= 2:
+        #     break
     
     # Останавливаем запись
     lidar_to_video.stop()
