@@ -8,7 +8,8 @@ import math
 from opt import (read_txt, icp_2d, polar_to_cartesian_from_x,
                   filter_points_by_radius, get_affine_matrix, 
                  apply_transform, draw_points, affine_matrix_from_axes_and_offset,
-                   angle_from_xy1_point_to_xy0_direction, down_sample_point_cloud, angle_between_2d)
+                   angle_from_xy1_point_to_xy0_direction, down_sample_point_cloud,
+                     angle_between_2d, find_first_free_on_line_numpy, line_points)
 from path_find import find_path_to_nearest, find_farthest_point_on_path
 
 
@@ -40,6 +41,7 @@ class LidarToVideoSLAM:
         self.prev_point_cloud = None
         self.video_name = video_name
         self.goal = self.get_point_coord_on_map(np.array(goal))
+        self.global_goal = self.get_point_coord_on_map(np.array(goal))
         self.local_goal = self.get_point_coord_on_map(np.array(goal))
         R = np.array([[0, -1],
                     [1,  0]])
@@ -57,6 +59,8 @@ class LidarToVideoSLAM:
         self.path = []
         self.object_radius_for_drawing = 0.2
         self.orient_line_width_for_draing = 0.05
+        self.prev_data = np.array([])
+        self.first_scan_made = False
             
         if video_name is not None:
             self.save_to_video = True
@@ -99,8 +103,11 @@ class LidarToVideoSLAM:
         if self.start and len(data) < MIN_LIDAR_POINTS_FOR_INIT:
             print("Not enough lidar points for initiate. Waiting...")
             return
+        if self.prev_data.shape == data.shape and np.allclose(data, self.prev_data):
+            return
         self.start = False
         self._points_data_to_frame(data)
+        self.first_scan_made = True
 
     def write_video_frame(self):
         if self.save_to_video:
@@ -115,10 +122,21 @@ class LidarToVideoSLAM:
             self.out.write(im)
             
             
-    def add_point_cloud_to_map(self, point_cloud):
+    def add_point_cloud_to_map_circle(self, point_cloud):
         for point in point_cloud:
             x, y = self.get_point_coord_on_map(point)
             cv.circle(self.map, [int(x), int(y)], self.wall_radius, [255, 255, 255], -1)
+
+    def add_point_cloud_to_map_rect(self, point_cloud):
+        for point in point_cloud:
+            x, y = self.get_point_coord_on_map(point)
+            # Рассчитываем координаты углов квадрата
+            half_side = self.wall_radius  # так как сторона = 2 * wall_radius
+            x1 = int(x - half_side)
+            y1 = int(y - half_side)
+            x2 = int(x + half_side)
+            y2 = int(y + half_side)
+            cv.rectangle(self.map, (x1, y1), (x2, y2), (255, 255, 255), -1)            
     
     def remove_robot_from_point_cloud(self, point_cloud):
         return filter_points_by_radius(point_cloud, center=[0, 0], radius=0.3)
@@ -133,18 +151,38 @@ class LidarToVideoSLAM:
         cv.line(im, self.get_point_coord_on_map(self.object_center), 
                 self.get_point_coord_on_map(self.object_orient),
                   (0, 0, 255), math.ceil(self.orient_line_width_for_draing * self.scale))
-        return im
+        return im        
     
     def find_next_local_goal(self):
+        if not self.first_scan_made:
+            return False
         path = find_path_to_nearest(self.map, 
                                     self.get_point_coord_on_map(self.object_center), self.goal)
         if path is None or len(path) == 0:
             print('No path can be found')
+            print('Reset map')
+            self.start = True        
+            self.map = np.zeros((self.resolution, self.resolution, 3), np.uint8)
+            self.prev_point_cloud = None
+            self._points_data_to_frame(self.prev_data)
+            points_from_goal = line_points(self.global_goal, self.get_point_coord_on_map(self.object_center))
+            for point in points_from_goal:
+                path = find_path_to_nearest(self.map, 
+                                            self.get_point_coord_on_map(self.object_center), point)
+                if len(path) > 0:
+                    self.goal = point
+                    break
+            else:
+                print("NO WAY. STUCK.")
+            
+
         self.path = path
         local_goal = find_farthest_point_on_path(self.map, path, 
                                                       self.get_point_coord_on_map(self.object_center))
         if local_goal is not None:
             self.local_goal = local_goal
+
+        return True
     
     def get_local_goal(self):
         if self.local_goal is not None:
@@ -179,6 +217,7 @@ class LidarToVideoSLAM:
         :param data: Список точек в формате [(angle, distance, intensity), ...].
         :return: Изображение в формате BGR (numpy array).
         """
+        self.prev_data = data
         # Создаем черное изображение
         cart_points = polar_to_cartesian_from_x(data)
         cart_points = self.move_point_cloud_from_lidar_to_robot_center(cart_points)
@@ -192,6 +231,7 @@ class LidarToVideoSLAM:
                                    voxel_down_sample=None,
                                    remove_points_prev=None)            
             if abs(theta * 180 / np.pi) > 15:
+                print("Too much transform! Ignoring")
                 return            
             new_transform = get_affine_matrix(theta, tx, ty)
             cart_points = apply_transform(cart_points, new_transform)
@@ -200,7 +240,7 @@ class LidarToVideoSLAM:
             self.object_center = apply_transform([self.object_center], new_transform)[0]
             self.object_orient = apply_transform([self.object_orient], new_transform)[0]            
             
-        self.add_point_cloud_to_map(cart_points)
+        self.add_point_cloud_to_map_rect(cart_points)
         if len(self.prev_point_cloud) > 5000:
             self.prev_point_cloud = down_sample_point_cloud(self.prev_point_cloud.T, 0.01)
 
@@ -225,9 +265,9 @@ if __name__ == "__main__":
     lidar_to_video = LidarToVideoSLAM(out_folder="output_videos",
                                       scale=100,
                                       map_size_meters=8,
-                                      video_name="go_test_path3",
+                                      video_name="go_test_path4",
                                       wall_radius=0.1,
-                                      goal=[3.5, 3.5],
+                                      goal=[3.2, 3.2],
                                       start_position=[2, 2],
                                       orientation_x=[0, -1]
                                       )
@@ -242,11 +282,12 @@ if __name__ == "__main__":
         # if i % 50 == 0:
                  
         lidar_to_video.write_data(np.array(point_cloud['p']))
-        lidar_to_video.find_next_local_goal()
+        if i % 10 == 0:
+            lidar_to_video.find_next_local_goal()
         lidar_to_video.write_video_frame()
 
-        # if i >= 2:
-        #     break
+        if i >= 40:
+            break
     
     # Останавливаем запись
     lidar_to_video.stop()

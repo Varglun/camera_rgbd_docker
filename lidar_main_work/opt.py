@@ -12,6 +12,85 @@ def read_txt(file):
                 data.append(json.loads(line))
     return data
 
+def line_points(p1, p2):
+    """
+    Возвращает список точек (x, y) в порядке от p1 к p2,
+    лежащих на прямой (растеризованной как пиксельная линия).
+
+    Параметры:
+        p1, p2 : tuple (x, y) — координаты точек (целые или вещественные).
+
+    Возвращает:
+        Список кортежей [(x0, y0), (x1, y1), ..., (xn, yn)]
+    """
+    x1, y1 = p1
+    x2, y2 = p2
+
+    dx = x2 - x1
+    dy = y2 - y1
+
+    # Количество шагов — чтобы не пропустить пиксели
+    steps = int(np.ceil(max(abs(dx), abs(dy))))
+    
+    if steps == 0:
+        return [(int(x1), int(y1))]
+
+    # Параметрическая интерполяция
+    t = np.linspace(0, 1, steps + 1)
+    xs = np.round(x1 + t * dx).astype(int)
+    ys = np.round(y1 + t * dy).astype(int)
+
+    # Преобразуем в список кортежей
+    return list(zip(xs, ys))
+
+def find_first_free_on_line_numpy(binary_map, p1, p2):
+    """
+    Находит первую (ближайшую к p1) точку на отрезке p1->p2,
+    которая не является препятствием (т.е. binary_map[y, x] != 255).
+
+    Параметры:
+        binary_map : np.ndarray, shape (H, W), dtype=uint8
+            Бинарная карта: 255 — препятствие, 0 (или другое) — свободно.
+        p1, p2 : tuple (x, y)
+            Начальная и конечная точки отрезка.
+
+    Возвращает:
+        (x, y) — координаты первой свободной точки, или None, если такой нет.
+    """
+    x1, y1 = p1
+    x2, y2 = p2
+
+    # Вектор от p1 к p2
+    dx = x2 - x1
+    dy = y2 - y1
+
+    # Количество шагов — максимум из абсолютных приращений (для покрытия всех пикселей)
+    steps = int(np.ceil(max(abs(dx), abs(dy))))
+    
+    if steps == 0:
+        # Точки совпадают
+        return p1 if binary_map[y1, x1] != 255 else None
+
+    # Параметрическая интерполяция: t от 0 до 1
+    t = np.linspace(0, 1, steps + 1)
+    xs = np.round(x1 + t * dx).astype(int)
+    ys = np.round(y1 + t * dy).astype(int)
+
+    # Ограничиваем координаты размерами карты (опционально, но безопасно)
+    H, W = binary_map.shape
+    xs = np.clip(xs, 0, W - 1)
+    ys = np.clip(ys, 0, H - 1)
+
+    # Ищем первую точку, не являющуюся препятствием
+    free_mask = binary_map[ys, xs] != 255
+    indices = np.where(free_mask)[0]
+    
+    if indices.size > 0:
+        i = indices[0]
+        return (int(xs[i]), int(ys[i]))
+    else:
+        return None
+
 def angle_between_2d(v1, v2, deg=True):
     """
     Возвращает ориентированный угол от v1 к v2 в диапазоне [-pi, pi] (или [-180, 180] градусов).
