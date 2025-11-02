@@ -72,6 +72,13 @@ class LidarToVideoSLAM:
                 10,  # Частота кадров
                 (self.resolution, self.resolution)
             )
+
+    def set_new_goal(self, goal):
+        self.goal = self.get_point_coord_on_map(np.array(goal))
+        self.global_goal = self.get_point_coord_on_map(np.array(goal))
+        self.local_goal = self.get_point_coord_on_map(np.array(goal))
+        self.find_next_local_goal()        
+
     
     def get_point_coord_on_map(self, point):
         return np.floor(point * self.scale).astype(np.int32)
@@ -275,7 +282,9 @@ if __name__ == "__main__":
     # Создаем новый видеофайл
     data = read_txt("lidar_main_work/scan_output_1761760087.txt")
     
+    goals = [[3.2, 3.2], [2.5, 2.5], [0.5, 3]]
     # Записываем данные в видео
+    j = 0
     for i, point_cloud in tqdm(enumerate(data), total=len(data)):  # 100 кадров
         # if i < 1:
             # continue
@@ -286,7 +295,11 @@ if __name__ == "__main__":
             lidar_to_video.find_next_local_goal()
         lidar_to_video.write_video_frame()
 
-        if i >= 40:
+        if i % 50 == 0:
+            lidar_to_video.set_new_goal(goals[j])
+            j += 1
+
+        if i >= 149:
             break
     
     # Останавливаем запись
