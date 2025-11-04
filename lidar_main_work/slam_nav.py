@@ -10,7 +10,8 @@ from opt import (read_txt, icp_2d, polar_to_cartesian_from_x,
                  apply_transform, draw_points, affine_matrix_from_axes_and_offset,
                    angle_from_xy1_point_to_xy0_direction, down_sample_point_cloud,
                      angle_between_2d, find_first_free_on_line_numpy, line_points)
-from path_find import find_path_to_nearest, find_farthest_point_on_path
+from path_find import (find_path_to_nearest, find_farthest_point_on_path, point_opposite_direction, 
+                       reverse_angle, is_obstacle_in_front, find_safest_target_around, shift_trajectory_away_from_obstacles)
 
 
 MIN_LIDAR_POINTS_FOR_INIT = 400
@@ -34,7 +35,7 @@ class LidarToVideoSLAM:
         """
         os.makedirs(out_folder, exist_ok=True)
         self.out_folder = out_folder
-        self.resolution = int(map_size_meters * 100)
+        self.resolution = int(map_size_meters * scale)
         self.out = None
         self.center = self.resolution // 2  # Центр изображения
         self.scale = scale  # Масштаб для перевода м в пиксели
@@ -49,7 +50,7 @@ class LidarToVideoSLAM:
         orientation_y = R @ orientation_x
 
         self.transform = affine_matrix_from_axes_and_offset(orientation_x, orientation_y, np.array(start_position))
-        self.object_center = apply_transform(np.array([[0, 0]]), self.transform)[0]
+        self.object_center = apply_transform(np.array([[-0.066, 0]]), self.transform)[0]
         self.object_orient = apply_transform(np.array([[0.2, 0]]), self.transform)[0]
         self.lidar_shear = np.array([[0], [0]]) # 0.064 [[0.066], [-0.03]]
         self.start = True        
@@ -57,10 +58,11 @@ class LidarToVideoSLAM:
         self.save_to_video = True
         self.wall_radius = int(wall_radius * scale)      
         self.path = []
-        self.object_radius_for_drawing = 0.2
+        self.object_radius_for_drawing = 0.1
         self.orient_line_width_for_draing = 0.05
         self.prev_data = np.array([])
         self.first_scan_made = False
+        self.falesafe = False
             
         if video_name is not None:
             self.save_to_video = True
@@ -169,6 +171,7 @@ class LidarToVideoSLAM:
             print('No path can be found')
             print('Reset map')
             self.start = True        
+            self.falesafe = False
             self.map = np.zeros((self.resolution, self.resolution, 3), np.uint8)
             self.prev_point_cloud = None
             self._points_data_to_frame(self.prev_data)
@@ -182,28 +185,56 @@ class LidarToVideoSLAM:
             else:
                 print("NO WAY. STUCK.")
             
-
+        path = shift_trajectory_away_from_obstacles(self.map[:, :, 0], path)
         self.path = path
         local_goal = find_farthest_point_on_path(self.map, path, 
                                                       self.get_point_coord_on_map(self.object_center))
+        local_goal = find_safest_target_around(self.map[:, :, 0], 
+                                               self.get_point_coord_on_map(self.object_center).astype(np.int32), 
+                                               local_goal.astype(np.int32), 
+                                               max_angle_deg=15,
+                                               safety_radius=10)
         if local_goal is not None:
             self.local_goal = local_goal
 
         return True
     
+    def is_path_clear_simple(self, step=1):
+        x0, y0 = self.get_point_coord_on_map(self.object_center)
+        x1, y1 = self.local_goal
+        dist = np.hypot(x1 - x0, y1 - y0)
+        steps = int(dist / step) + 1
+
+        xs = np.linspace(x0, x1, steps).astype(int)
+        ys = np.linspace(y0, y1, steps).astype(int)
+
+        return np.any(self.map[ys, xs, 0] == 255)
+    
     def get_local_goal(self):
         if self.local_goal is not None:
+            obj_position = self.get_point_coord_on_map(self.object_center)
             obj_orient = self.get_object_orientation_vector_in_map_coords()
+            if not self.falesafe and self.first_scan_made:
+                if self.map[obj_position[1], obj_position[0], 0] == 255:
+                    self.falesafe = True
+                    self.local_goal = point_opposite_direction(obj_position, obj_orient + obj_position, 0.1 * self.scale).astype(np.int32)
+                if is_obstacle_in_front(self.prev_data, 0.18, 0.05):
+                    self.falesafe = True
+                    self.local_goal = point_opposite_direction(obj_position, obj_orient + obj_position, 0.1 * self.scale).astype(np.int32)
+        
             goal_orient = self.get_local_goal_orientation_vector_in_map_coords()
             local_goal_theta = angle_between_2d(obj_orient, goal_orient, deg=True)
-            local_goal_distance = (np.linalg.norm(self.local_goal - self.get_point_coord_on_map(self.object_center)))
+            local_goal_distance = (np.linalg.norm(self.local_goal - obj_position))
+            if self.falesafe:
+                local_goal_theta = reverse_angle(local_goal_theta)
+                local_goal_distance *= -1 
             return local_goal_theta, local_goal_distance / self.scale
         else:
             return None, None
     
     def draw_path(self, im):
         for p in self.path[1:-1]:
-            cv.circle(im, [p.x, p.y], self.wall_radius, (255, 0, 0), -1)
+            cv.circle(im, p, math.ceil(self.object_radius_for_drawing * self.scale) // 2, (255, 0, 0), -1)
             # im[p.x, p.y] = (255, 0, 0)
         return im
     
@@ -227,7 +258,7 @@ class LidarToVideoSLAM:
         self.prev_data = data
         # Создаем черное изображение
         cart_points = polar_to_cartesian_from_x(data)
-        cart_points = self.move_point_cloud_from_lidar_to_robot_center(cart_points)
+        # cart_points = self.move_point_cloud_from_lidar_to_robot_center(cart_points)
         cart_points = self.remove_robot_from_point_cloud(cart_points)
         cart_points = apply_transform(cart_points, self.transform)
         
@@ -237,9 +268,9 @@ class LidarToVideoSLAM:
             theta, tx, ty = icp_2d(self.prev_point_cloud.T, cart_points.T, max_corr_dist=0.1,
                                    voxel_down_sample=None,
                                    remove_points_prev=None)            
-            if abs(theta * 180 / np.pi) > 15:
-                print("Too much transform! Ignoring")
-                return            
+            #if abs(theta * 180 / np.pi) > 15:
+            #    print("Too much transform! Ignoring")
+            #    return
             new_transform = get_affine_matrix(theta, tx, ty)
             cart_points = apply_transform(cart_points, new_transform)
             self.transform = new_transform @ self.transform
@@ -271,18 +302,18 @@ if __name__ == "__main__":
     # Создаем объект для записи видео
     lidar_to_video = LidarToVideoSLAM(out_folder="output_videos",
                                       scale=100,
-                                      map_size_meters=8,
-                                      video_name="go_test_path4",
-                                      wall_radius=0.1,
-                                      goal=[3.2, 3.2],
-                                      start_position=[2, 2],
+                                      map_size_meters=4,
+                                      video_name="new_path2",
+                                      wall_radius=0.05,
+                                      goal=[3, 3],
+                                      start_position=[1, 1],
                                       orientation_x=[0, -1]
                                       )
     
     # Создаем новый видеофайл
-    data = read_txt("lidar_main_work/scan_output_1761760087.txt")
+    data = read_txt("lidar_main_work/scan_output_1761760401.txt")
     
-    goals = [[3.2, 3.2], [2.5, 2.5], [0.5, 3]]
+    goals = [[0.8, 0.8], [2.5, 2.5], [0.5, 3]]
     # Записываем данные в видео
     j = 0
     for i, point_cloud in tqdm(enumerate(data), total=len(data)):  # 100 кадров
@@ -294,13 +325,8 @@ if __name__ == "__main__":
         if i % 10 == 0:
             lidar_to_video.find_next_local_goal()
         lidar_to_video.write_video_frame()
-
-        if i % 50 == 0:
-            lidar_to_video.set_new_goal(goals[j])
-            j += 1
-
-        if i >= 149:
-            break
+        # if i >= 300:
+        #     break
     
     # Останавливаем запись
     lidar_to_video.stop()

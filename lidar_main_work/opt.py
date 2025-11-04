@@ -119,7 +119,7 @@ def angle_between_2d(v1, v2, deg=True):
     if deg:
         angle = np.degrees(angle)
     
-    return angle
+    return angle * -1
 
 def angle_from_xy1_point_to_xy0_direction(A, point_xy1):
     """
@@ -194,7 +194,7 @@ def polar_to_cartesian_from_x(scan, min_dist=0, max_dist=12):
     scan: np.array of shape (N, 2) — [[angle, distance], ...]
     returns: np.array of shape (2, N) — [[x1, x2, ...], [y1, y2, ...]]
     """
-    angles = np.radians(scan[:, 0]) * -1
+    angles = np.radians(scan[:, 0])
     distances = scan[:, 1]
     valid = (distances > min_dist) & (distances < max_dist)
     angles = angles[valid]    
@@ -211,7 +211,7 @@ def polar_to_cartesian_from_y(scan, min_dist=0, max_dist=12):
     Угол отсчитывается от оси Y по часовой стрелке.
     """
     # Преобразуем углы из градусов в радианы и меняем их знак для корректного направления
-    angles = np.radians(scan[:, 0]) * -1
+    angles = np.radians(scan[:, 0])
     
     # Расстояния
     distances = scan[:, 1]
